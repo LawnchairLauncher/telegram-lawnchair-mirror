@@ -96,7 +96,7 @@ def handleMessages(message):
     if message.document:
         if downloadBuild(message):
             if hashBuild(message):
-                pass
+                print('New build succesfully downloaded and hashed!')
             else:
                 print('Failed to create hash!')
         else:
