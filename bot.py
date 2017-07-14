@@ -93,7 +93,6 @@ bot = setupBot(config)
 
 @bot.channel_post_handler(content_types=['document'])
 def handleMessages(message):
-    print(message)
     if message.document:
         if downloadBuild(message):
             if hashBuild(message):
