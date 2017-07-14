@@ -1,0 +1,5 @@
+[directories]
+DOWNLOAD_DIR: downloads/
+
+[telegram]
+API_KEY:

@@ -1,0 +1,9 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# Config file which contains credentials
+config.cfg
+
+# download dir
+downloads/
