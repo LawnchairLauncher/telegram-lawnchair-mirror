@@ -3,3 +3,4 @@ DOWNLOAD_DIR: downloads/
 
 [telegram]
 API_KEY:
+ALLOWED_CHANNELS:

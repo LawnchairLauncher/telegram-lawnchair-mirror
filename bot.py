@@ -93,6 +93,10 @@ bot = setupBot(config)
 
 @bot.channel_post_handler(content_types=['document'])
 def handleMessages(message):
+    allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
+    if str(message.chat.id) not in allowed_channels:
+        print('Channel ID refused: {0}'.format(str(message.chat.id)))
+        return
     if message.document:
         if downloadBuild(message):
             if hashBuild(message):
