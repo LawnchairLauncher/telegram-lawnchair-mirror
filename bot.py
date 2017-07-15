@@ -51,8 +51,14 @@ def downloadBuild(message):
     download_dir = config.get('directories', 'DOWNLOAD_DIR')
     file_info = bot.get_file(message.document.file_id)
 
+    # Get the buildnumber from the filename
+    build_number = message.document.file_name.split('-')[1][:-4]
+
+    # Create build-specific directory
+    os.makedirs(os.path.dirname(download_dir + build_number + '/'), exist_ok=True)
+
     URL = 'https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)
-    location = download_dir + message.document.file_name
+    location = download_dir + build_number + '/' + message.document.file_name
     try:
         response = requests.get(URL, stream=True)
         with open(location, 'wb') as f:
@@ -68,8 +74,12 @@ def downloadBuild(message):
 def hashBuild(message):
     hash = md5()
     download_dir = config.get('directories', 'DOWNLOAD_DIR')
-    location = download_dir + message.document.file_name
-    sum_location = download_dir + message.document.file_name + '.md5'
+
+    # Get the buildnumber from the filename
+    build_number = message.document.file_name.split('-')[1][:-4]
+
+    location = download_dir + build_number + '/' + message.document.file_name
+    sum_location = download_dir + build_number + '/MD5SUM'
     try:
         with open(location, 'rb') as f:
             for chunk in iter(lambda: f.read(4096), b''):
@@ -79,6 +89,25 @@ def hashBuild(message):
         return 1
     except Exception as e:
         print('The following error has occured while creating the MD5sum: ' + str(e))
+        return 0
+
+def changelogBuild(message):
+    download_dir = config.get('directories', 'DOWNLOAD_DIR')
+    first_line = message.text.split('\n', 1)[0]
+    try:
+        build_number = first_line.split(' ')[-1][1:]
+    except Exception as e:
+        print('It seems like this is not a proper changelog message! The following error occured: ' + str(e))
+        return 0
+
+    changelog_location = download_dir + build_number + '/CHANGELOG'
+
+    try:
+        with open(changelog_location, 'wt') as f:
+            f.write(message.text)
+        return 1
+    except Exception as e:
+        print('The following error has occured while saving the changelog: ' + str(e))
         return 0
 
 def setup():
@@ -92,7 +121,7 @@ setup()
 bot = setupBot(config)
 
 @bot.channel_post_handler(content_types=['document'])
-def handleMessages(message):
+def handleBuilds(message):
     allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
     if str(message.chat.id) not in allowed_channels:
         print('Channel ID refused: {0}'.format(str(message.chat.id)))
@@ -105,6 +134,18 @@ def handleMessages(message):
                 print('Failed to create hash!')
         else:
             print('Failed to download build!')
+
+@bot.channel_post_handler(content_types=['text'])
+def handleChangelog(message):
+    allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
+    if str(message.chat.id) not in allowed_channels:
+        print('Channel ID refused: {0}'.format(str(message.chat.id)))
+        return
+    if message.text.startswith('Changelog'):
+        if changelogBuild(message):
+            print('New build\'s changelog saved!')
+        else:
+            print('Failed to obtain changelog from message!')
 
 print('Started polling!')
 bot.polling(none_stop=True, interval=1)
