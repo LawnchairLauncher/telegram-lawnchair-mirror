@@ -62,8 +62,8 @@ Yay! Your bot should now be up & running!
 ## FAQ
 
 ### So this bot can only be used for Lawnchair?
-Nope! :)  
-You can use this bot to mirror files from any Channel!
+Kinda :/  
+Everything before commit b3b282cbd85c1fd1a049c045da3f2d2dfa2776a5 can be used to mirror any channel. The changes after that include Lawnchair-specific changes for parsing the changelog for example. They're not too hard to adjust/rip out though! :)
 
 ### Your code is shit
 Potatoes. Show me you can do it better.
