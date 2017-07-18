@@ -1,0 +1,23 @@
+[Unit]
+Description=Lawnchair Mirror Bot
+After=network.target
+Requires=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=PATH_TO_WORKING_DIRECTORY
+User=USERNAME
+Group=GROUP
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=no
+ReadOnlyDirectories=/home
+ReadWriteDirectories=PATH_TO_HOMEDIR
+ReadWriteDirectories=PATH_TO_DOWNLOAD_DIR
+ExecStart=PATH_TO_BOT.PY
+NoNewPrivileges=yes
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
