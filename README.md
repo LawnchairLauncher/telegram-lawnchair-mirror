@@ -64,11 +64,17 @@ sudo cp misc/lawnchairmirror.service /etc/systemd/system/lawnchairmirror.service
 ```
 
 2. Replace the following variables with the correct information:
+
 - PATH_TO_WORKING_DIRECTORY: The working directory the service will use. I'd recommend you set this to the repository directory (ie. `/home/lawnchairmirror/telegram-lawnchair-mirror`)
+
 - USERNAME: The username of the user the bot should run as
+
 - GROUP: The group of the user the bot should run as
+
 - PATH_TO_HOMEDIR: The path to the homedir of the user that the bot will run as
+
 - PATH_TO_DOWNLOAD_DIR: The path to the directory where you will store your downloads (the directory you set earlier in the `config.cfg` file)
+
 - PATH_TO_BOT.PY: The path to the `bot.py` file
 
 3. Tell systemd you want to load the new service file we just created:
