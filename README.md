@@ -64,18 +64,12 @@ sudo cp misc/lawnchairmirror.service /etc/systemd/system/lawnchairmirror.service
 ```
 
 2. Replace the following variables with the correct information:
-
-- PATH_TO_WORKING_DIRECTORY: The working directory the service will use. I'd recommend you set this to the repository directory (ie. `/home/lawnchairmirror/telegram-lawnchair-mirror`)
-
-- USERNAME: The username of the user the bot should run as
-
-- GROUP: The group of the user the bot should run as
-
-- PATH_TO_HOMEDIR: The path to the homedir of the user that the bot will run as
-
-- PATH_TO_DOWNLOAD_DIR: The path to the directory where you will store your downloads (the directory you set earlier in the `config.cfg` file)
-
-- PATH_TO_BOT.PY: The path to the `bot.py` file
+  - PATH_TO_WORKING_DIRECTORY: The working directory the service will use. I'd recommend you set this to the repository directory (ie. `/home/lawnchairmirror/telegram-lawnchair-mirror`)
+  - USERNAME: The username of the user the bot should run as
+  - GROUP: The group of the user the bot should run as
+  - PATH_TO_HOMEDIR: The path to the homedir of the user that the bot will run as
+  - PATH_TO_DOWNLOAD_DIR: The path to the directory where you will store your downloads (the directory you set earlier in the `config.cfg` file)
+  - PATH_TO_BOT.PY: The path to the `bot.py` file
 
 3. Tell systemd you want to load the new service file we just created:
 ```bash
@@ -87,11 +81,11 @@ sudo systemctl daemon-reload
 sudo systemctl start lawnchairmirror.service
 ```
 
-You should now check if the bot is running properly, you can do this in multiple ways, these are the two I recommend:
-1. `sudo systemctl status lawnchairmirror.service`
-2. `ps aux | grep python3` or `ps aux | grep bot.py`
+    You should now check if the bot is running properly, you can do this in multiple ways, these are the two I recommend:
+    1. `sudo systemctl status lawnchairmirror.service`
+    2. `ps aux | grep python3` or `ps aux | grep bot.py`
 
-After you've verified the bot is running properly, you can set the service to load when your server starts!
+    After you've verified the bot is running properly, you can set the service to load when your server starts!
 
 5. Enable the service at boot:
 ```bash
