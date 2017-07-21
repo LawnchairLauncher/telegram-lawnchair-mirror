@@ -23,17 +23,6 @@ def loadConfig():
         sys.exit(0)
     return config
 
-def setupLogging():
-    log_dir = config.get('directories', 'LOG_DIR')
-    log_name = config.get('logging', 'FILE_NAME')
-    log_level = config.get('logging', 'LEVEL')
-    numeric_level = getattr(logging, log_level.upper(), None)
-    log_location = log_dir + log_name
-    if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: {0}'.format(log_level))
-    logging.basicConfig(filename=log_location, level=numeric_level, format='[%(asctime)s][%(levelname)s] %(message)s')
-    print('Logs will be written to: {0}'.format(log_location))
-
 def checkDirs():
     '''
     Function that creates all directories specified in the 'directories' section in the config file
@@ -44,7 +33,18 @@ def checkDirs():
     # Create 'latest' directory in the download dir
     os.makedirs(os.path.dirname(config['directories']['DOWNLOAD_DIR'] + 'latest/'), exist_ok=True)
 
-    logging.info('Directories are ok!')
+    print('Directories are ok!')
+
+def setupLogging():
+    log_dir = config.get('directories', 'LOG_DIR')
+    log_name = config.get('logging', 'FILE_NAME')
+    log_level = config.get('logging', 'LEVEL')
+    numeric_level = getattr(logging, log_level.upper(), None)
+    log_location = log_dir + log_name
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: {0}'.format(log_level))
+    logging.basicConfig(filename=log_location, level=numeric_level, format='[%(asctime)s][%(levelname)s] %(message)s')
+    print('Logs will be written to: {0}'.format(log_location))
 
 def setupBot(config):
     '''
@@ -153,8 +153,8 @@ def setup():
     Function that contains all functions required to 'setup' the bot
     '''
     loadConfig()
-    setupLogging()
     checkDirs()
+    setupLogging()
 
 setup()
 bot = setupBot(config)
