@@ -29,6 +29,9 @@ def checkDirs():
     for key in config['directories']:
         os.makedirs(os.path.dirname(config['directories'][key]), exist_ok=True)
 
+    # Create 'latest' directory in the download dir
+    os.makedirs(os.path.dirname(config['directories']['DOWNLOAD_DIR'] + 'latest/'), exist_ok=True)
+
 def setupBot(config):
     '''
     Function that creates and returns the telebot object
@@ -65,6 +68,13 @@ def downloadBuild(message):
             response.raw.decode_content = True
             shutil.copyfileobj(response.raw, f)
         del response
+
+        # Create symlink to 'latest' directory
+        try:
+            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
+        except FileExistsError:
+            os.unlink(download_dir + 'latest/lawnchair-latest.apk')
+            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
         return 1
     except Exception as e:
         print('The following error has occured while downloading a file: ' + str(e))
@@ -86,6 +96,13 @@ def hashBuild(message):
                 hash.update(chunk)
         with open(sum_location, 'wt') as f:
             f.write(hash.hexdigest())
+
+        # Create symlink to 'latest' directory
+        try:
+            os.symlink(sum_location, download_dir + 'latest/MD5SUM')
+        except FileExistsError:
+            os.unlink(download_dir + 'latest/MD5SUM')
+            os.symlink(sum_location, download_dir + 'latest/MD5SUM')
         return 1
     except Exception as e:
         print('The following error has occured while creating the MD5sum: ' + str(e))
@@ -105,6 +122,13 @@ def changelogBuild(message):
     try:
         with open(changelog_location, 'wt') as f:
             f.write(message.text)
+
+        # Create symlink to 'latest' directory
+        try:
+            os.symlink(changelog_location, download_dir + 'latest/CHANGELOG')
+        except FileExistsError:
+            os.unlink(download_dir + 'latest/CHANGELOG')
+            os.symlink(changelog_location, download_dir + 'latest/CHANGELOG')
         return 1
     except Exception as e:
         print('The following error has occured while saving the changelog: ' + str(e))
