@@ -1,5 +1,10 @@
 [directories]
 DOWNLOAD_DIR: downloads/
+LOG_DIR: logs/
+
+[logging]
+FILE_NAME: log.log
+LEVEL: INFO
 
 [telegram]
 API_KEY:

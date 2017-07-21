@@ -2,6 +2,7 @@
 import os
 import shutil
 import telebot
+import logging
 import requests
 import configparser
 
@@ -22,6 +23,17 @@ def loadConfig():
         sys.exit(0)
     return config
 
+def setupLogging():
+    log_dir = config.get('directories', 'LOG_DIR')
+    log_name = config.get('logging', 'FILE_NAME')
+    log_level = config.get('logging', 'LEVEL')
+    numeric_level = getattr(logging, log_level.upper(), None)
+    log_location = log_dir + log_name
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: {0}'.format(log_level))
+    logging.basicConfig(filename=log_location, level=numeric_level, format='[%(asctime)s][%(levelname)s] %(message)s')
+    print('Logs will be written to: {0}'.format(log_location))
+
 def checkDirs():
     '''
     Function that creates all directories specified in the 'directories' section in the config file
@@ -31,6 +43,8 @@ def checkDirs():
 
     # Create 'latest' directory in the download dir
     os.makedirs(os.path.dirname(config['directories']['DOWNLOAD_DIR'] + 'latest/'), exist_ok=True)
+
+    logging.info('Directories are ok!')
 
 def setupBot(config):
     '''
@@ -43,13 +57,13 @@ def downloadBuild(message):
     '''
     Function that will download the Lawnchair builds that are sent to the channel
     '''
-    print('Downloading new build!')
-    print('File information:')
-    print('Date: {0}'.format(message.date))
-    print('File name: {0}'.format(message.document.file_name))
-    print('File size: {0}'.format(message.document.file_size))
-    print('Mime type: {0}'.format(message.document.mime_type))
-    print('File id: {0}'.format(message.document.file_id))
+    logging.info('Downloading new build!')
+    logging.info('File information:')
+    logging.info('Date: {0}'.format(message.date))
+    logging.info('File name: {0}'.format(message.document.file_name))
+    logging.info('File size: {0}'.format(message.document.file_size))
+    logging.info('Mime type: {0}'.format(message.document.mime_type))
+    logging.info('File id: {0}'.format(message.document.file_id))
     token = config.get('telegram', 'API_KEY')
     download_dir = config.get('directories', 'DOWNLOAD_DIR')
     file_info = bot.get_file(message.document.file_id)
@@ -77,7 +91,7 @@ def downloadBuild(message):
             os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
         return 1
     except Exception as e:
-        print('The following error has occured while downloading a file: ' + str(e))
+        logging.critical('The following error has occured while downloading a file: ' + str(e))
         del response
         return 0
 
@@ -105,7 +119,7 @@ def hashBuild(message):
             os.symlink(sum_location, download_dir + 'latest/MD5SUM')
         return 1
     except Exception as e:
-        print('The following error has occured while creating the MD5sum: ' + str(e))
+        logging.critical('The following error has occured while creating the MD5sum: ' + str(e))
         return 0
 
 def changelogBuild(message):
@@ -114,7 +128,7 @@ def changelogBuild(message):
     try:
         build_number = first_line.split(' ')[-1][1:]
     except Exception as e:
-        print('It seems like this is not a proper changelog message! The following error occured: ' + str(e))
+        logging.critical('It seems like this is not a proper changelog message! The following error occured: ' + str(e))
         return 0
 
     changelog_location = download_dir + build_number + '/CHANGELOG'
@@ -131,7 +145,7 @@ def changelogBuild(message):
             os.symlink(changelog_location, download_dir + 'latest/CHANGELOG')
         return 1
     except Exception as e:
-        print('The following error has occured while saving the changelog: ' + str(e))
+        logging.critical('The following error has occured while saving the changelog: ' + str(e))
         return 0
 
 def setup():
@@ -139,6 +153,7 @@ def setup():
     Function that contains all functions required to 'setup' the bot
     '''
     loadConfig()
+    setupLogging()
     checkDirs()
 
 setup()
@@ -148,28 +163,28 @@ bot = setupBot(config)
 def handleBuilds(message):
     allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
     if str(message.chat.id) not in allowed_channels:
-        print('Channel ID refused: {0}'.format(str(message.chat.id)))
+        logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
         return
     if message.document:
         if downloadBuild(message):
             if hashBuild(message):
-                print('New build succesfully downloaded and hashed!')
+                logging.info('New build succesfully downloaded and hashed!')
             else:
-                print('Failed to create hash!')
+                logging.critical('Failed to create hash!')
         else:
-            print('Failed to download build!')
+            logging.critical('Failed to download build!')
 
 @bot.channel_post_handler(content_types=['text'])
 def handleChangelog(message):
     allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
     if str(message.chat.id) not in allowed_channels:
-        print('Channel ID refused: {0}'.format(str(message.chat.id)))
+        logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
         return
     if message.text.startswith('Changelog'):
         if changelogBuild(message):
-            print('New build\'s changelog saved!')
+            logging.info('New build\'s changelog saved!')
         else:
-            print('Failed to obtain changelog from message!')
+            logging.critical('Failed to obtain changelog from message!')
 
-print('Started polling!')
+logging.info('Started polling!')
 bot.polling(none_stop=True, interval=1)

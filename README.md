@@ -43,7 +43,11 @@ The Python bot needs this API key in order to talk to Telegram. Don't have an AP
 ```
 DOWNLOAD_DIR: downloads/
 ```
-The directory where downloads will be stored (make sure the user you're running the bot as has write permissions!).
+The directory where downloads will be stored (make sure the user you're running the bot as has write permissions!). This path has to be the **full** path to the directory (ie. `/home/user/telegram-bot/files/downloads/`).
+```
+LOG_DIR: logs/
+```
+The directory where the logs will be stored (make sure the user you're running the bot as has write permissions!).
 ```
 ALLOWED_CHANNELS: -1000000000
 ```
