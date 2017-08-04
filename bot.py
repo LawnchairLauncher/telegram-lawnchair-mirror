@@ -30,9 +30,6 @@ def checkDirs():
     for key in config['directories']:
         os.makedirs(os.path.dirname(config['directories'][key]), exist_ok=True)
 
-    # Create 'latest' directory in the download dir
-    os.makedirs(os.path.dirname(config['directories']['DOWNLOAD_DIR'] + 'latest/'), exist_ok=True)
-
     print('Directories are ok!')
 
 def setupLogging():
@@ -126,7 +123,7 @@ def changelogBuild(message):
     download_dir = config.get('directories', 'DOWNLOAD_DIR')
     first_line = message.text.split('\n', 1)[0]
     try:
-        build_number = first_line.split(' ')[-1][1:]
+        build_number = first_line.split(' ')[-1]
     except Exception as e:
         logging.critical('It seems like this is not a proper changelog message! The following error occured: ' + str(e))
         return 0
