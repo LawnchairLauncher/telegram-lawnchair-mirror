@@ -10,3 +10,6 @@ downloads/
 
 # log dir
 logs/
+
+# Visual Studio Code config dir
+.vscode/

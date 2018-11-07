@@ -1,12 +1,39 @@
 #!/usr/bin/python3
 import os
+import sys
 import shutil
+import fnmatch
 import telebot
 import logging
 import requests
 import configparser
 
 from hashlib import md5
+
+def _lawnchairBuildNameProcessor(fileName):
+    '''
+    Function that parses the name of a Lawnchair build and returns the branch + version number
+    '''
+    fileName = fileName[10:] # Strip "Lawnchair-" from filename
+    fileName = fileName[:-4] # Strip ".apk" from filename
+    fileNameSplit = fileName.split('_')
+
+    version = fileNameSplit[-1] # Prints the last element in fileNameSplit
+    branch = '_'.join(i for i in fileNameSplit[:-1]) # Joins together all elements in fileNameSplit, except the last element (which is the version)
+
+    return {'branch': branch, 'version': version}
+
+def _lawnstepBuildNameProcessor(fileName):
+    '''
+    Function that parses the name of a Lawnstep build and returns the version number
+    '''
+    fileName = fileName[9:] # Strip "Lawnstep-" from filename
+    fileName = fileName[:-4] # Strip ".zip" from filename
+
+    version = fileName
+    branch = 'PLACEHOLDER'
+
+    return {'branch': branch, 'version': version}
 
 def loadConfig():
     '''
@@ -20,7 +47,7 @@ def loadConfig():
     except Exception as e:
         print('Error while reading config file!')
         print(e)
-        sys.exit(0)
+        sys.exit(1)
     return config
 
 def checkDirs():
@@ -50,11 +77,47 @@ def setupBot(config):
     token = config.get('telegram', 'API_KEY')
     return telebot.TeleBot(token)
 
-def downloadBuild(message):
+def downloadManager(message):
     '''
-    Function that will download the Lawnchair builds that are sent to the channel
+    Function that will download the supported files that are sent to the channel
     '''
-    logging.info('Downloading new build!')
+
+    validFile = False
+    processFunction = None
+    projectFolderName = None
+
+    # Dictionary containing the filenames + mime types we support
+    supported_files = {
+        'Lawnchair-*.apk': {
+            'mime_type': 'application/vnd.android.package-archive',
+            'folder_name': 'lawnchair',
+            'process_function': _lawnchairBuildNameProcessor
+        },
+        'Lawnstep-*.zip': {
+            'mime_type': 'application/zip',
+            'folder_name': 'lawnstep',
+            'process_function': _lawnstepBuildNameProcessor
+        } 
+    }
+
+    logging.info('File sent to Lawnchair channel')
+
+    for sFile in supported_files:
+        if fnmatch.fnmatch(message.document.file_name, sFile):
+            validFile = True
+            processFunction = supported_files[sFile]['process_function']
+            projectFolderName = supported_files[sFile]['folder_name']
+            break
+
+    if not validFile:
+        logging.info('Unsupported file sent in channel:')
+        logging.info('Date: {0}'.format(message.date))
+        logging.info('File name: {0}'.format(message.document.file_name))
+        logging.info('File size: {0}'.format(message.document.file_size))
+        logging.info('Mime type: {0}'.format(message.document.mime_type))
+        logging.info('File id: {0}'.format(message.document.file_id))
+        return 0
+
     logging.info('File information:')
     logging.info('Date: {0}'.format(message.date))
     logging.info('File name: {0}'.format(message.document.file_name))
@@ -66,13 +129,20 @@ def downloadBuild(message):
     file_info = bot.get_file(message.document.file_id)
 
     # Get the buildnumber from the filename
-    build_number = message.document.file_name.split('-')[1][:-4]
+    processedFileName = processFunction(message.document.file_name)
+
+    build_number = processedFileName['version']
 
     # Create build-specific directory
-    os.makedirs(os.path.dirname(download_dir + build_number + '/'), exist_ok=True)
+    build_directory = '{}/{}/{}/'.format(download_dir, projectFolderName, build_number)
+    os.makedirs(os.path.dirname(build_directory), exist_ok=True)
+
+    # Create 'latest' directory for project
+    latest_directory = '{}/{}/latest/'.format(download_dir, projectFolderName)
+    os.makedirs(os.path.dirname(latest_directory), exist_ok=True)
 
     URL = 'https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)
-    location = download_dir + build_number + '/' + message.document.file_name
+    location = '{}{}/{}/{}'.format(download_dir, projectFolderName, build_number, message.document.file_name)
     try:
         response = requests.get(URL, stream=True)
         with open(location, 'wb') as f:
@@ -81,28 +151,27 @@ def downloadBuild(message):
         del response
 
         # Create symlink to 'latest' directory
+        latest_location = '{}{}/latest/{}'.format(download_dir, projectFolderName, message.document.file_name)
         try:
-            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
+            os.symlink(location, latest_location)
         except FileExistsError:
-            os.unlink(download_dir + 'latest/lawnchair-latest.apk')
-            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
+            os.unlink(latest_location)
+            os.symlink(location, latest_location)
         return 1
+        return {'status': 1, 'path': None, 'filename': None}
     except Exception as e:
         logging.critical('The following error has occured while downloading a file: ' + str(e))
         del response
         return 0
+        return {'status': 0, 'path': build_directory, 'filename': message.document.file_name}
 
-def hashBuild(message):
+def hashBuild(path, filename):
     hash = md5()
-    download_dir = config.get('directories', 'DOWNLOAD_DIR')
 
-    # Get the buildnumber from the filename
-    build_number = message.document.file_name.split('-')[1][:-4]
-
-    location = download_dir + build_number + '/' + message.document.file_name
-    sum_location = download_dir + build_number + '/MD5SUM'
+    file_location = path + filename
+    sum_location = path + 'MD5SUM'
     try:
-        with open(location, 'rb') as f:
+        with open(file_location, 'rb') as f:
             for chunk in iter(lambda: f.read(4096), b''):
                 hash.update(chunk)
         with open(sum_location, 'wt') as f:
@@ -157,13 +226,13 @@ setup()
 bot = setupBot(config)
 
 @bot.channel_post_handler(content_types=['document'])
-def handleBuilds(message):
+def handleDocuments(message):
     allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
     if str(message.chat.id) not in allowed_channels:
         logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
         return
     if message.document:
-        if downloadBuild(message):
+        if downloadManager(message):
             if hashBuild(message):
                 logging.info('New build succesfully downloaded and hashed!')
             else:
@@ -172,7 +241,7 @@ def handleBuilds(message):
             logging.critical('Failed to download build!')
 
 @bot.channel_post_handler(content_types=['text'])
-def handleChangelog(message):
+def handleChangelogs(message):
     allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
     if str(message.chat.id) not in allowed_channels:
         logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
