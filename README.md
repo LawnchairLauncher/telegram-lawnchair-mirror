@@ -8,14 +8,24 @@
 These instructions assume you're using a Debian-based GNU/Linux distribution.
 ### Set up Python for the bot
 
-1. Install Python 3.4 and pip (Any Python 3 version is file, really)
+1. Install Python 3.4 and pip (Any Python 3 version is fine, really)
 ```bash
-sudo apt-get install python3.4 python3-pip
+sudo apt-get install python3.4 python3-pip python3-virtualenv
 ```
 
-2. Install the required pip modules
+2. Create a virtualenv for this bot
 ```bash
-sudo pip3 install pyTelegramBotAPI requests
+mkdir -p ~/virtualenvs && cd ~/virtualenvs && virtualenv -p python3 telegram-lawnchair-mirror
+```
+
+3. Activate the virtualenv
+```bash
+. ~/virtualenvs/telegram-lawnchair-mirror/bin/activate
+```
+
+4. Install the required pip modules
+```bash
+pip3 install pyTelegramBotAPI requests
 ```
 
 ### Set up the bot
@@ -73,6 +83,7 @@ sudo cp misc/lawnchairmirror.service /etc/systemd/system/lawnchairmirror.service
   - GROUP: The group of the user the bot should run as
   - PATH_TO_HOMEDIR: The path to the homedir of the user that the bot will run as
   - PATH_TO_DOWNLOAD_DIR: The path to the directory where you will store your downloads (the directory you set earlier in the `config.cfg` file)
+  - PATH_TO_VIRTUALENV_PYTHON: The path to the `python3` binary in your virtualenv
   - PATH_TO_BOT.PY: The path to the `bot.py` file
 
 3. Tell systemd you want to load the new service file we just created:
