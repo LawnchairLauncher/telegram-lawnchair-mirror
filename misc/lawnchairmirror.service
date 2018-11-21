@@ -15,7 +15,7 @@ ProtectHome=no
 ReadOnlyDirectories=/home
 ReadWriteDirectories=PATH_TO_HOMEDIR
 ReadWriteDirectories=PATH_TO_DOWNLOAD_DIR
-ExecStart=PATH_TO_BOT.PY
+ExecStart=PATH_TO_VIRTUALENV_PYTHON PATH_TO_BOT.PY
 NoNewPrivileges=yes
 Restart=always
 

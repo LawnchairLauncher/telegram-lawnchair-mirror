@@ -1,9 +1,12 @@
 #!/usr/bin/python3
 import os
+import sys
 import shutil
+import fnmatch
 import telebot
 import logging
 import requests
+import traceback
 import configparser
 
 from hashlib import md5
@@ -19,8 +22,8 @@ def loadConfig():
         print('Configuration file succesfully loaded!')
     except Exception as e:
         print('Error while reading config file!')
-        print(e)
-        sys.exit(0)
+        traceback.print_exc()
+        sys.exit(1)
     return config
 
 def checkDirs():
@@ -33,15 +36,18 @@ def checkDirs():
     print('Directories are ok!')
 
 def setupLogging():
-    log_dir = config.get('directories', 'LOG_DIR')
-    log_name = config.get('logging', 'FILE_NAME')
-    log_level = config.get('logging', 'LEVEL')
-    numeric_level = getattr(logging, log_level.upper(), None)
-    log_location = log_dir + log_name
-    if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: {0}'.format(log_level))
-    logging.basicConfig(filename=log_location, level=numeric_level, format='[%(asctime)s][%(levelname)s] %(message)s')
-    print('Logs will be written to: {0}'.format(log_location))
+    '''
+    Function that sets up the logging object along with everything we want it to do (ie. log to a logfile)
+    '''
+    logDir = config.get('directories', 'LOG_DIR')
+    logName = config.get('logging', 'FILE_NAME')
+    logLevel = config.get('logging', 'LEVEL')
+    numericLevel = getattr(logging, logLevel.upper(), None)
+    logLocation = logDir + logName
+    if not isinstance(numericLevel, int):
+        raise ValueError('Invalid log level: {0}'.format(logLevel))
+    logging.basicConfig(filename=logLocation, level=numericLevel, format='[%(asctime)s][%(levelname)s] %(message)s')
+    print('Logs will be written to: {0}'.format(logLocation))
 
 def setupBot(config):
     '''
@@ -50,100 +56,308 @@ def setupBot(config):
     token = config.get('telegram', 'API_KEY')
     return telebot.TeleBot(token)
 
-def downloadBuild(message):
-    '''
-    Function that will download the Lawnchair builds that are sent to the channel
-    '''
-    logging.info('Downloading new build!')
-    logging.info('File information:')
-    logging.info('Date: {0}'.format(message.date))
-    logging.info('File name: {0}'.format(message.document.file_name))
-    logging.info('File size: {0}'.format(message.document.file_size))
-    logging.info('Mime type: {0}'.format(message.document.mime_type))
-    logging.info('File id: {0}'.format(message.document.file_id))
-    token = config.get('telegram', 'API_KEY')
-    download_dir = config.get('directories', 'DOWNLOAD_DIR')
-    file_info = bot.get_file(message.document.file_id)
+class Document(object):
+    def __init__(self, message):
+        self.message = message
 
-    # Get the buildnumber from the filename
-    build_number = message.document.file_name.split('-')[1][:-4]
+        self.validFile = False
+        self.processFunction = None
+        self.projectFolderName = None
 
-    # Create build-specific directory
-    os.makedirs(os.path.dirname(download_dir + build_number + '/'), exist_ok=True)
+        self.fileVersion = None
+        self.fileBranch = None
+        self.fileLocation = None
+        self.fileName = message.document.file_name
+        self.fileExt = os.path.splitext(message.document.file_name)[-1]
+        self.buildDirectory = None
+        self.latestDirectory = None
 
-    URL = 'https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)
-    location = download_dir + build_number + '/' + message.document.file_name
-    try:
-        response = requests.get(URL, stream=True)
-        with open(location, 'wb') as f:
-            response.raw.decode_content = True
-            shutil.copyfileobj(response.raw, f)
-        del response
+        self.token = config.get('telegram', 'API_KEY')
+        self.downloadDir = config.get('directories', 'DOWNLOAD_DIR')
+        self.fileInfo = bot.get_file(message.document.file_id)
 
-        # Create symlink to 'latest' directory
+    def _lawnchairBuildNameProcessor(self):
+        '''
+        Function that parses the name of a Lawnchair build and returns the branch + version number
+        '''
+
+        logging.debug('Processing Lawnchair build file name')
+
+        fileName = self.fileName
+
+        fileName = fileName[10:] # Strip "Lawnchair-" from filename
+        fileName = fileName[:-4] # Strip ".apk" from filename
+        fileNameSplit = fileName.split('_')
+
+        self.fileVersion = fileNameSplit[-1] # Prints the last element in fileNameSplit
+        self.fileBranch = '_'.join(i for i in fileNameSplit[:-1]) # Joins together all elements in fileNameSplit, except the last element (which is the version)
+
+    def _lawnstepBuildNameProcessor(self):
+        '''
+        Function that parses the name of a Lawnstep build and returns the version number
+        '''
+
+        logging.debug('Processing Lawnstep build file name')
+
+        fileName = self.fileName
+
+        fileName = fileName[9:] # Strip "Lawnstep-" from filename
+        fileName = fileName[:-4] # Strip ".zip" from filename
+
+        self.fileVersion = fileName
+        self.fileBranch = 'PLACEHOLDER'
+
+    def _checkFile(self):
+        '''
+        Function that checks if the sent file is supported
+        '''
+        logging.debug('Checking file against supported files')
+
+        supportedFiles = {
+            'Lawnchair-*.apk': {
+                'mime_type': 'application/vnd.android.package-archive',
+                'folder_name': 'lawnchair',
+                'process_function': self._lawnchairBuildNameProcessor
+            },
+            'Lawnstep-*.zip': {
+                'mime_type': 'application/zip',
+                'folder_name': 'lawnstep',
+                'process_function': self._lawnstepBuildNameProcessor
+            }
+        }
+
+        for sFile in supportedFiles:
+            if fnmatch.fnmatch(self.message.document.file_name, sFile):
+                self.validFile = True
+                self.processFunction = supportedFiles[sFile]['process_function']
+                self.projectFolderName = supportedFiles[sFile]['folder_name']
+                break
+
+    def _createDirectories(self):
+        '''
+        Function that creates the correct directories for a build
+        '''
+        logging.debug('Creating directories for new build')
+
+        # Create build-specific directory
+        self.buildDirectory = '{}/{}/{}/'.format(self.downloadDir, self.projectFolderName, self.fileVersion)
+        os.makedirs(os.path.dirname(self.buildDirectory), exist_ok=True)
+
+        # Create 'latest' directory for project
+        self.latestDirectory = '{}/{}/latest/'.format(self.downloadDir, self.projectFolderName)
+        os.makedirs(os.path.dirname(self.latestDirectory), exist_ok=True)
+
+    def _downloadBuild(self):
+        '''
+        Function that downloads a build
+        '''
+        logging.debug('Downloading build')
+
+        URL = 'https://api.telegram.org/file/bot{0}/{1}'.format(self.token, self.fileInfo.file_path)
+        self.fileLocation = '{}{}/{}/{}'.format(self.downloadDir, self.projectFolderName, self.fileVersion, self.fileName)
         try:
-            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
-        except FileExistsError:
-            os.unlink(download_dir + 'latest/lawnchair-latest.apk')
-            os.symlink(location, download_dir + 'latest/lawnchair-latest.apk')
-        return 1
-    except Exception as e:
-        logging.critical('The following error has occured while downloading a file: ' + str(e))
-        del response
-        return 0
+            response = requests.get(URL, stream=True)
+            with open(self.fileLocation, 'wb') as f:
+                response.raw.decode_content = True
+                shutil.copyfileobj(response.raw, f)
+            del response
+            return True
+        except Exception:
+            logging.error('Unable to download file from Telegram!')
+            traceback.print_exc()
+            return False
 
-def hashBuild(message):
-    hash = md5()
-    download_dir = config.get('directories', 'DOWNLOAD_DIR')
+    def _hashBuild(self):
+        '''
+        Function that hashes a build
+        '''
+        logging.debug('Creating checksum of build')
 
-    # Get the buildnumber from the filename
-    build_number = message.document.file_name.split('-')[1][:-4]
+        hash = md5()
 
-    location = download_dir + build_number + '/' + message.document.file_name
-    sum_location = download_dir + build_number + '/MD5SUM'
-    try:
-        with open(location, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
-                hash.update(chunk)
-        with open(sum_location, 'wt') as f:
-            f.write(hash.hexdigest())
-
-        # Create symlink to 'latest' directory
+        self.sumLocation = self.buildDirectory + 'MD5SUM'
         try:
-            os.symlink(sum_location, download_dir + 'latest/MD5SUM')
-        except FileExistsError:
-            os.unlink(download_dir + 'latest/MD5SUM')
-            os.symlink(sum_location, download_dir + 'latest/MD5SUM')
-        return 1
-    except Exception as e:
-        logging.critical('The following error has occured while creating the MD5sum: ' + str(e))
-        return 0
+            with open(self.fileLocation, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b''):
+                    hash.update(chunk)
+            with open(self.sumLocation, 'wt') as f:
+                f.write(hash.hexdigest())
+        except Exception as e:
+            logging.critical('The following error has occured while creating the MD5sum: ' + str(e))
 
-def changelogBuild(message):
-    download_dir = config.get('directories', 'DOWNLOAD_DIR')
-    first_line = message.text.split('\n', 1)[0]
-    try:
-        build_number = first_line.split(' ')[-1]
-    except Exception as e:
-        logging.critical('It seems like this is not a proper changelog message! The following error occured: ' + str(e))
-        return 0
+    def _symlink(self):
+        '''
+        Function that symlinks the build and MD5SUM file to the 'latest' directory
+        '''
+        logging.debug('Creating symlinks for files')
 
-    changelog_location = download_dir + build_number + '/CHANGELOG'
-
-    try:
-        with open(changelog_location, 'wt') as f:
-            f.write(message.text)
-
-        # Create symlink to 'latest' directory
+        # Create symlink for the file itself
+        fileSymlink = '{}{}'.format(self.latestDirectory, 'latest' + self.fileExt)
         try:
-            os.symlink(changelog_location, download_dir + 'latest/CHANGELOG')
+            os.symlink(self.fileLocation, fileSymlink)
         except FileExistsError:
-            os.unlink(download_dir + 'latest/CHANGELOG')
-            os.symlink(changelog_location, download_dir + 'latest/CHANGELOG')
-        return 1
-    except Exception as e:
-        logging.critical('The following error has occured while saving the changelog: ' + str(e))
-        return 0
+            os.unlink(fileSymlink)
+            os.symlink(self.fileLocation, fileSymlink)
+
+        # Create symlink for the MD5SUM
+        md5sumSymlink = '{}MD5SUM'.format(self.latestDirectory)
+        try:
+            os.symlink(self.sumLocation, md5sumSymlink)
+        except FileExistsError:
+            os.unlink(md5sumSymlink)
+            os.symlink(self.sumLocation, md5sumSymlink)
+
+    def processFile(self):
+        '''
+        Function that kicks off all other functions contained within the class
+        '''
+        logging.info('New build was sent to the channel')
+        logging.info('File information:')
+        logging.info('Date: {0}'.format(self.message.date))
+        logging.info('File name: {0}'.format(self.message.document.file_name))
+        logging.info('File size: {0}'.format(self.message.document.file_size))
+        logging.info('Mime type: {0}'.format(self.message.document.mime_type))
+        logging.info('File id: {0}'.format(self.message.document.file_id))
+
+        self._checkFile()
+
+        if self.validFile:
+            self.processFunction()
+            self._createDirectories()
+            self._downloadBuild()
+            self._hashBuild()
+            self._symlink()
+            return True
+        else:
+            return False
+
+class Changelog(object):
+    def __init__(self, message):
+        self.changelog = message.text
+
+        self.validChangelog = False
+
+        self.projectFolderName = None
+
+        self.changelogVersion = None
+        self.changelogBranch = None
+        self.changelogLocation = None
+        self.buildDirectory = None
+        self.latestDirectory = None
+
+        self.downloadDir = config.get('directories', 'DOWNLOAD_DIR')
+
+        self.metadata = None
+
+    def _lawnchairChangelogProcessor(self):
+        '''
+        Function that parses the changelog of a Lawnchair build and returns the branch + version number
+        '''
+
+        logging.debug('Processing Lawnchair build changelog')
+
+        branch = self.metadata.split('-')[0]
+        version = self.metadata.split('-')[1][:-1] # select the second element of the list and remove the last character of said element
+
+        self.changelogVersion = version
+        self.changelogBranch = branch
+
+    def _lawnstepChangelogProcessor(self):
+        '''
+        Function that parses the changelog of a Lawnstep build and returns the version number
+        '''
+
+        logging.debug('Processing Lawnstep build changelog')
+
+        version = self.metadata.split('-')[1]
+
+        self.changelogVersion = version
+        self.changelogBranch = 'PLACEHOLDER'
+
+    def _checkChangelog(self):
+        '''
+        Function that checks the changelog and starts the appropriate processor
+        '''
+
+        # Get the first line of the changelog, which contains the metadata we need
+        firstLine = self.changelog.split('\n')[0].lower()
+
+        # Extract the data we're going to process
+        self.metadata = firstLine.split()[-1]
+
+        # Ugly workaround for the fact that Lawnstep is the only project that includes the project 
+        # name in the initial line of the changelog (or this just isn't the ideal way, whatever).
+        # With this we assume that if 'lawnstep' is in the first line, the changelog is meant for Lawnstep
+        # if not, it's meant for Lawnchair. This is ugly. :)
+        try:
+            if 'lawnstep' in firstLine:
+                self.projectFolderName = 'lawnstep'
+                self._lawnstepChangelogProcessor()
+            else:
+                self.projectFolderName = 'lawnchair'
+                self._lawnchairChangelogProcessor()
+            self.validChangelog = True
+        except Exception:
+            logging.error('Unable to process changelog, has the format changed?')
+            traceback.print_exc()
+            self.validChangelog = False
+
+    def _createDirectories(self):
+        '''
+        Function that creates the correct directories for a changelog
+        '''
+        logging.debug('Creating directories for new build')
+
+        # Create build-specific directory
+        self.buildDirectory = '{}/{}/{}/'.format(self.downloadDir, self.projectFolderName, self.changelogVersion)
+        os.makedirs(os.path.dirname(self.buildDirectory), exist_ok=True)
+
+        # Create 'latest' directory for project
+        self.latestDirectory = '{}/{}/latest/'.format(self.downloadDir, self.projectFolderName)
+        os.makedirs(os.path.dirname(self.latestDirectory), exist_ok=True)
+
+    def _saveChangelog(self):
+        '''
+        Function that saves the changelog
+        '''
+        self.changelogLocation = self.buildDirectory + 'CHANGELOG'
+
+        try:
+            with open(self.changelogLocation, 'wt') as f:
+                f.write(self.changelog)
+        except Exception:
+            logging.error('Unable to write changelog!')
+            traceback.print_exc()
+
+    def _symlink(self):
+        '''
+        Function that symlinks the changelog to the 'latest' directory
+        '''
+        logging.debug('Creating symlinks for changelog')
+
+        changelogSymlink = '{}CHANGELOG'.format(self.latestDirectory)
+
+        try:
+            os.symlink(self.changelogLocation, changelogSymlink)
+        except FileExistsError:
+            os.unlink(changelogSymlink)
+            os.symlink(self.changelogLocation, changelogSymlink)
+
+    def processChangelog(self):
+        '''
+        Function that kicks off all other functions contained within the class
+        '''
+        logging.info('New changelog was sent to the channel')
+
+        self._checkChangelog()
+
+        if self.validChangelog:
+            self._createDirectories()
+            self._saveChangelog()
+            self._symlink()
+            return True
+        else:
+            return False
 
 def setup():
     '''
@@ -157,28 +371,28 @@ setup()
 bot = setupBot(config)
 
 @bot.channel_post_handler(content_types=['document'])
-def handleBuilds(message):
-    allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
-    if str(message.chat.id) not in allowed_channels:
+def handleDocuments(message):
+    allowedChannels = config.get('telegram', 'ALLOWED_CHANNELS')
+    if str(message.chat.id) not in allowedChannels:
         logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
         return
     if message.document:
-        if downloadBuild(message):
-            if hashBuild(message):
-                logging.info('New build succesfully downloaded and hashed!')
-            else:
-                logging.critical('Failed to create hash!')
+        document = Document(message)
+        if document.processFile():
+            logging.info('New build succesfully downloaded and hashed!')
         else:
-            logging.critical('Failed to download build!')
+            logging.critical('Failed to process build!')
 
 @bot.channel_post_handler(content_types=['text'])
-def handleChangelog(message):
-    allowed_channels = config.get('telegram', 'ALLOWED_CHANNELS')
-    if str(message.chat.id) not in allowed_channels:
+def handleChangelogs(message):
+    allowedChannels = config.get('telegram', 'ALLOWED_CHANNELS')
+    if str(message.chat.id) not in allowedChannels:
         logging.warning('Channel ID refused: {0}'.format(str(message.chat.id)))
         return
     if message.text.startswith('Changelog'):
-        if changelogBuild(message):
+        changelog = Changelog(message)
+
+        if changelog.processChangelog():
             logging.info('New build\'s changelog saved!')
         else:
             logging.critical('Failed to obtain changelog from message!')
